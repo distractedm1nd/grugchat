@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use celestia_types::nmt::Namespace;
 use reqwest::Client;
 use serde_json::json;
 use state::Message;
@@ -47,7 +48,20 @@ async fn main() -> Result<()> {
             send_message(&client, &server_url, &args[2], &args[3], &args[4]).await?
         }
         "start-fullnode" => {
-            let fullnode = Arc::new(FullNode::new().await?);
+            if args.len() < 4 {
+                println!("Error: start height and namespace required");
+                return Ok(());
+            }
+            let start_height = args[2]
+                .parse::<u64>()
+                .context("Failed to parse start height")?;
+
+            let namespace_bytes =
+                hex::decode(&args[3]).context("Failed to decode namespace hex")?;
+            let namespace = Namespace::new_v0(namespace_bytes.as_slice())
+                .context("Failed to create namespace")?;
+
+            let fullnode = Arc::new(FullNode::new(namespace, start_height).await?);
             fullnode.start().await?;
             return Ok(());
         }
@@ -63,7 +77,7 @@ fn print_usage() {
     println!("  grugchat read-channel <channel_name>");
     println!("  grugchat register-user <public_key_hex> <user_id>");
     println!("  grugchat send-message <public_key_hex> <channel> <message>");
-    println!("  grugchat start-fullnode");
+    println!("  grugchat start-fullnode <start_height> <namespace_hex>");
 }
 
 async fn list_channels(client: &Client, server_url: &str) -> Result<()> {

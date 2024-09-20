@@ -50,19 +50,17 @@ impl TryFrom<&Blob> for Batch {
 }
 
 impl FullNode {
-    pub async fn new() -> Result<Self> {
+    pub async fn new(namespace: Namespace, start_height: u64) -> Result<Self> {
         let da_client = celestia_rpc::Client::new("ws://localhost:26658", None)
             .await
             .context("Couldn't start Celestia client")?;
 
         Ok(FullNode {
             da_client,
-            namespace: Namespace::new_v0(&[0x1, 0x2, 0x1, 0x3])?,
-            start_height: 2000,
-
-            state: Arc::new(Mutex::new(State::new())),
+            namespace,
+            start_height,
             pending_transactions: Arc::new(Mutex::new(Vec::new())),
-
+            state: Arc::new(Mutex::new(State::new())),
             genesis_sync_complete: Arc::new(AtomicBool::new(false)),
             sync_notify: Arc::new(Notify::new()),
         })
