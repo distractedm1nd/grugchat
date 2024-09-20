@@ -1,4 +1,3 @@
-use crate::webserver::*;
 use anyhow::{Context, Result};
 use axum::{
     routing::{get, post},
@@ -14,13 +13,13 @@ use tokio::spawn;
 use tokio::sync::{mpsc, Mutex, Notify};
 use tokio::time::{interval, Duration};
 
-use crate::{state::State, tx::Transaction};
+use crate::{state::State, tx::Transaction, webserver::*};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct Batch(Vec<Transaction>);
 
-const BATCH_INTERVAL: Duration = Duration::from_secs(15);
+const BATCH_INTERVAL: Duration = Duration::from_secs(3);
 
 pub struct FullNode {
     da_client: celestia_rpc::Client,
@@ -119,8 +118,9 @@ impl FullNode {
             .collect();
 
         let mut state = self.state.lock().await;
-        txs.into_iter().for_each(|tx| {
-            state.process_tx(tx);
+        txs.into_iter().for_each(|tx| match state.process_tx(tx) {
+            Ok(_) => (),
+            Err(e) => eprintln!("Error processing tx: {}", e),
         });
     }
 
@@ -201,7 +201,7 @@ impl FullNode {
             async move { node.sync_incoming_blocks().await }
         });
 
-        tokio::try_join!(genesis_sync, incoming_sync)?;
+        let _ = tokio::try_join!(genesis_sync, incoming_sync)?;
 
         Ok(())
     }
@@ -222,7 +222,7 @@ impl FullNode {
             async move { node.start_server().await }
         });
 
-        tokio::try_join!(sync_handle, batch_posting_handle, server_handle)?;
+        let _ = tokio::try_join!(sync_handle, batch_posting_handle, server_handle)?;
 
         Ok(())
     }

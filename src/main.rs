@@ -1,7 +1,15 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde_json::json;
-use std::env;
+use state::Message;
+use std::{env, sync::Arc};
+
+mod fullnode;
+mod state;
+mod tx;
+mod webserver;
+
+use crate::fullnode::FullNode;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -39,8 +47,9 @@ async fn main() -> Result<()> {
             send_message(&client, &server_url, &args[2], &args[3], &args[4]).await?
         }
         "start-fullnode" => {
-            println!("Error: start-fullnode command is not supported in this client.");
-            println!("Please start the FullNode server separately.");
+            let fullnode = Arc::new(FullNode::new().await?);
+            fullnode.start().await?;
+            return Ok(());
         }
         _ => print_usage(),
     }
@@ -50,42 +59,39 @@ async fn main() -> Result<()> {
 
 fn print_usage() {
     println!("Usage:");
-    println!("  grugchat-client list-channels");
-    println!("  grugchat-client read-channel <channel_name>");
-    println!("  grugchat-client register-user <public_key_hex> <user_id>");
-    println!("  grugchat-client send-message <public_key_hex> <channel> <message>");
+    println!("  grugchat list-channels");
+    println!("  grugchat read-channel <channel_name>");
+    println!("  grugchat register-user <public_key_hex> <user_id>");
+    println!("  grugchat send-message <public_key_hex> <channel> <message>");
+    println!("  grugchat start-fullnode");
 }
 
 async fn list_channels(client: &Client, server_url: &str) -> Result<()> {
-    let response = client
+    let channels: Vec<String> = client
         .get(&format!("{}/channels", server_url))
         .send()
         .await?
-        .json::<Vec<String>>()
+        .json()
         .await?;
 
     println!("Channels:");
-    for channel in response {
+    for channel in channels {
         println!("- {}", channel);
     }
     Ok(())
 }
 
 async fn read_channel(client: &Client, server_url: &str, channel: &str) -> Result<()> {
-    let response = client
+    let messages: Vec<Message> = client
         .get(&format!("{}/channels/{}", server_url, channel))
         .send()
         .await?
-        .json::<Option<Vec<serde_json::Value>>>()
+        .json()
         .await?;
 
-    if let Some(messages) = response {
-        println!("Messages in channel '{}':", channel);
-        for msg in messages {
-            println!("{}: {}", msg["user_id"], msg["contents"]);
-        }
-    } else {
-        println!("Channel not found.");
+    println!("Messages in channel '{}':", channel);
+    for msg in messages {
+        println!("{}: {}", msg.user_id, msg.contents);
     }
     Ok(())
 }

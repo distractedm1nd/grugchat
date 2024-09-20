@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Message {
-    user_id: String,
-    contents: String,
+    pub user_id: String,
+    pub contents: String,
 }
 
 pub struct State {
@@ -51,7 +51,7 @@ impl State {
 
         match tx {
             Transaction::SendMessage(contents) => {
-                let messages = self.channels.get_mut(&contents.channel).unwrap();
+                let messages = self.channels.get_mut(&contents.channel);
                 let user = self.users.get(&contents.user).unwrap();
 
                 let msg = Message {
@@ -59,10 +59,11 @@ impl State {
                     contents: contents.contents,
                 };
 
-                if messages.is_empty() {
-                    self.channels.insert(contents.channel, vec![msg]);
-                } else {
-                    messages.push(msg);
+                match messages {
+                    Some(msgs) => msgs.push(msg),
+                    None => {
+                        self.channels.insert(contents.channel, vec![msg]);
+                    }
                 }
             }
             Transaction::Register(contents) => {
