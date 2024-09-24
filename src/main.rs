@@ -96,15 +96,20 @@ async fn list_channels(client: &Client, server_url: &str) -> Result<()> {
 }
 
 async fn read_channel(client: &Client, server_url: &str, channel: &str) -> Result<()> {
-    let messages: Vec<Message> = client
+    let messages: Option<Vec<Message>> = client
         .get(&format!("{}/channels/{}", server_url, channel))
         .send()
         .await?
         .json()
         .await?;
 
+    if messages.is_none() {
+        println!("Channel '{}' not found", channel);
+        return Ok(());
+    }
+
     println!("Messages in channel '{}':", channel);
-    for msg in messages {
+    for msg in messages.unwrap() {
         println!("{}: {}", msg.user_id, msg.contents);
     }
     Ok(())
