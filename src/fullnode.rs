@@ -117,7 +117,7 @@ impl FullNode {
 
         let mut state = self.state.lock().await;
         txs.into_iter().for_each(|tx| match state.process_tx(tx) {
-            Ok(_) => (),
+            Ok(_) => println!("Processed transaction"),
             Err(e) => eprintln!("Error processing tx: {}", e),
         });
     }
