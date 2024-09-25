@@ -31,6 +31,13 @@ impl State {
     }
 
     pub fn validate_tx(&self, tx: Transaction) -> Result<()> {
+        let res = tx
+            .clone()
+            .signature()
+            .verify(&tx.pubkey(), &bincode::serialize(&tx.without_signature())?);
+        if !res {
+            return Err(anyhow!("signature verification failed"));
+        }
         match tx {
             Transaction::SendMessage(contents) => {
                 if !self.users.contains_key(&contents.user) {

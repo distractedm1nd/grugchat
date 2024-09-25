@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
 use celestia_types::nmt::Namespace;
+use ed25519_dalek::{ed25519::signature::Signer, SigningKey};
+use keystore_rs::{KeyChain, KeyStore};
 use reqwest::Client;
 use serde_json::json;
 use state::Message;
 use std::{env, sync::Arc};
+use tx::{Register, SendMessage, Signature, Transaction};
 
 mod fullnode;
 mod state;
@@ -25,6 +28,16 @@ async fn main() -> Result<()> {
         env::var("GRUGCHAT_SERVER_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     match args[1].as_str() {
+        "generate-key" => {
+            let sk = keystore_rs::create_signing_key();
+            let keychain = KeyChain;
+            let res = keychain.add_signing_key(&sk);
+            if res.is_err() {
+                println!("Error: {}", res.err().unwrap());
+            } else {
+                println!("Public key: {}", hex::encode(sk.verifying_key().to_bytes()));
+            }
+        }
         "list-channels" => list_channels(&client, &server_url).await?,
         "read-channel" => {
             if args.len() < 3 {
@@ -34,18 +47,33 @@ async fn main() -> Result<()> {
             read_channel(&client, &server_url, &args[2]).await?
         }
         "register-user" => {
-            if args.len() < 4 {
-                println!("Error: Public key and user ID required");
+            if args.len() < 3 {
+                println!("Error: User ID required");
                 return Ok(());
             }
-            register_user(&client, &server_url, &args[2], &args[3]).await?
+
+            let keychain = KeyChain;
+            let res = keychain.get_signing_key();
+            if res.is_err() {
+                println!("Error: {}", res.clone().err().unwrap());
+            }
+
+            register_user(&client, &server_url, &res.unwrap(), &args[2]).await?
         }
         "send-message" => {
-            if args.len() < 5 {
-                println!("Error: Public key, channel, and message required");
+            if args.len() < 3 {
+                println!("Error: Channel and message required");
                 return Ok(());
             }
-            send_message(&client, &server_url, &args[2], &args[3], &args[4]).await?
+
+            let keychain = KeyChain;
+            let res = keychain.get_signing_key();
+            if res.is_err() {
+                println!("Error: {}", res.clone().err().unwrap());
+            }
+            // let key_hex = hex::encode(res.unwrap().verifying_key().to_bytes());
+
+            send_message(&client, &server_url, &res.unwrap(), &args[2], &args[3]).await?
         }
         "start-fullnode" => {
             if args.len() < 4 {
@@ -73,10 +101,11 @@ async fn main() -> Result<()> {
 
 fn print_usage() {
     println!("Usage:");
+    println!("  grugchat generate-key");
     println!("  grugchat list-channels");
     println!("  grugchat read-channel <channel_name>");
-    println!("  grugchat register-user <public_key_hex> <user_id>");
-    println!("  grugchat send-message <public_key_hex> <channel> <message>");
+    println!("  grugchat register-user <user_id>");
+    println!("  grugchat send-message <channel> <message>");
     println!("  grugchat start-fullnode <start_height> <namespace_hex>");
 }
 
@@ -114,30 +143,36 @@ async fn read_channel(client: &Client, server_url: &str, channel: &str) -> Resul
     }
     Ok(())
 }
-
 async fn register_user(
     client: &Client,
     server_url: &str,
-    public_key_hex: &str,
+    key: &SigningKey,
     id: &str,
 ) -> Result<()> {
-    let public_key = hex::decode(public_key_hex).context("Failed to decode public key")?;
+    let public_key_bytes = key.clone().verifying_key().to_bytes().to_vec();
+    let tx = Transaction::Register(Register {
+        user: key.verifying_key().into(),
+        id: id.to_string(),
+        signature: Signature::new(Vec::new()),
+    });
 
+    let sig = key.sign(&bincode::serialize(&tx)?);
     let response = client
         .post(&format!("{}/register", server_url))
         .json(&json!({
-            "public_key": public_key,
-            "id": id
+            "public_key": public_key_bytes,
+            "id": id,
+            "signature": sig.to_bytes().to_vec(),
         }))
         .send()
         .await?;
-
     if response.status().is_success() {
         println!("User registration request sent successfully.");
     } else {
+        let error_body = &response.text().await?;
         println!(
             "Failed to register user. Server responded with: {}",
-            response.status()
+            error_body
         );
     }
     Ok(())
@@ -146,18 +181,28 @@ async fn register_user(
 async fn send_message(
     client: &Client,
     server_url: &str,
-    public_key_hex: &str,
+    key: &SigningKey,
     channel: &str,
     message: &str,
 ) -> Result<()> {
-    let public_key = hex::decode(public_key_hex).context("Failed to decode public key")?;
+    let public_key_bytes = key.clone().verifying_key().to_bytes().to_vec();
+
+    let tx = Transaction::SendMessage(SendMessage {
+        user: key.clone().verifying_key().into(),
+        channel: channel.to_string(),
+        contents: message.to_string(),
+        signature: Signature::new(Vec::new()),
+    });
+
+    let sig = key.clone().sign(&bincode::serialize(&tx)?);
 
     let response = client
         .post(&format!("{}/send", server_url))
         .json(&json!({
-            "user": public_key,
+            "user": public_key_bytes,
             "channel": channel,
-            "contents": message
+            "contents": message,
+            "signature": sig.to_bytes().to_vec(),
         }))
         .send()
         .await?;

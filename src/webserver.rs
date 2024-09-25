@@ -1,6 +1,6 @@
 use crate::fullnode::FullNode;
 use crate::state::Message;
-use crate::tx::{PublicKey, Register, SendMessage, Transaction};
+use crate::tx::{PublicKey, Register, SendMessage, Signature, Transaction};
 use axum::{extract::State as AxumState, http::StatusCode, Json};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -10,12 +10,13 @@ pub(crate) struct SendMessageRequest {
     user: Vec<u8>,
     contents: String,
     channel: String,
+    signature: Vec<u8>,
 }
-
 #[derive(Deserialize)]
 pub(crate) struct RegisterUserRequest {
     public_key: Vec<u8>,
     id: String,
+    signature: Vec<u8>,
 }
 
 pub(crate) async fn list_channels(AxumState(node): AxumState<Arc<FullNode>>) -> Json<Vec<String>> {
@@ -36,10 +37,9 @@ pub(crate) async fn register_user(
     Json(payload): Json<RegisterUserRequest>,
 ) -> Result<(), (StatusCode, String)> {
     let tx = Transaction::Register(Register {
-        user: PublicKey {
-            bytes: payload.public_key,
-        },
+        user: PublicKey::new(payload.public_key),
         id: payload.id,
+        signature: Signature::new(payload.signature),
     });
     node.queue_transaction(tx)
         .await
@@ -51,11 +51,10 @@ pub(crate) async fn send_message(
     Json(payload): Json<SendMessageRequest>,
 ) -> Result<(), (StatusCode, String)> {
     let tx = Transaction::SendMessage(SendMessage {
-        user: PublicKey {
-            bytes: payload.user,
-        },
+        user: PublicKey::new(payload.user),
         contents: payload.contents,
         channel: payload.channel,
+        signature: Signature::new(payload.signature),
     });
     node.queue_transaction(tx)
         .await

@@ -14,3 +14,5 @@ anyhow = "1.0.89"
 reqwest = { version = "0.12.7", features = ["json"] }
 serde_json = "1.0.128"
 hex = "0.4.3"
+ed25519-dalek = "2.1.1"
+keystore-rs = "0.1.0"
